@@ -207,6 +207,7 @@ public: //types
     struct LidarSetting : SensorSetting {
 
         // shared defaults
+        bool force_full_scan = false;                     // forces a full lidar scan return
         uint number_of_channels = 16;
         real_T range = 10000.0f / 100;                    // meters
         uint points_per_second = 100000;
@@ -1177,6 +1178,7 @@ private:
 
     static void initializeLidarSetting(LidarSetting& lidar_setting, const Settings& settings_json)
     {
+        lidar_setting.force_full_scan = settings_json.getBool("ForceFullScan", lidar_setting.force_full_scan);
         lidar_setting.number_of_channels = settings_json.getInt("NumberOfChannels", lidar_setting.number_of_channels);
         lidar_setting.range = settings_json.getFloat("Range", lidar_setting.range);
         lidar_setting.points_per_second = settings_json.getInt("PointsPerSecond", lidar_setting.points_per_second);

@@ -16,6 +16,7 @@ struct LidarSimpleParams {
 
     // default settings
     // TODO: enable reading of these params from AirSim settings
+    bool force_full_scan = false;             // forces a full lidar scan return, disregarding update rate
 
     uint number_of_channels = 16; 
     real_T range = 10000.0f / 100;            // meters
@@ -41,6 +42,7 @@ struct LidarSimpleParams {
     {
         std::string simmode_name = AirSimSettings::singleton().simmode_name;
 
+        force_full_scan = settings.force_full_scan;
         number_of_channels = settings.number_of_channels;
         range = settings.range;
         points_per_second = settings.points_per_second;

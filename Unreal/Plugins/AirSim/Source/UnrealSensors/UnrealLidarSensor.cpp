@@ -53,7 +53,7 @@ void UnrealLidarSensor::getPointCloud(const msr::airlib::Pose& lidar_pose, const
     // cap the points to scan via ray-tracing; this is currently needed for car/Unreal tick scenarios
     // since SensorBase mechanism uses the elapsed clock time instead of the tick delta-time.
     constexpr float MAX_POINTS_IN_SCAN = 1e+5f;
-    uint32 total_points_to_scan = FMath::RoundHalfFromZero(params.points_per_second * delta_time);
+    uint32 total_points_to_scan = params.force_full_scan ? FMath::RoundHalfFromZero(params.points_per_second * 1.0 / params.horizontal_rotation_frequency) : FMath::RoundHalfFromZero(params.points_per_second * delta_time);
     if (total_points_to_scan > MAX_POINTS_IN_SCAN)
     {
         total_points_to_scan = MAX_POINTS_IN_SCAN;
@@ -69,14 +69,24 @@ void UnrealLidarSensor::getPointCloud(const msr::airlib::Pose& lidar_pose, const
     }
 
     // calculate needed angle/distance between each point
-    const float angle_distance_of_tick = params.horizontal_rotation_frequency * 360.0f * delta_time;
+    const float angle_distance_of_tick = params.force_full_scan ? 360.0f : params.horizontal_rotation_frequency * 360.0f * delta_time;
     const float angle_distance_of_laser_measure = angle_distance_of_tick / points_to_scan_with_one_laser;
+    //UAirBlueprintLib::LogMessageString("Lidar Note 1: ", "Delta time: " + std::to_string(delta_time), LogDebugLevel::Informational);
+    //UAirBlueprintLib::LogMessageString("Lidar Note 2: ", "Force Full Scan: " + std::to_string(params.force_full_scan), LogDebugLevel::Informational);
+    //UAirBlueprintLib::LogMessageString("Lidar Note 3: ", "Total Points: " + std::to_string(total_points_to_scan), LogDebugLevel::Informational);
+    //UAirBlueprintLib::LogMessageString("Lidar Note 4: ", "Angle Distance of laser measure: " + std::to_string(angle_distance_of_laser_measure), LogDebugLevel::Informational);
+    //UAirBlueprintLib::LogMessageString("Lidar Note 5: ", "Points for each laser: " + std::to_string(points_to_scan_with_one_laser), LogDebugLevel::Informational);
+    
 
     // normalize FOV start/end
     const float laser_start = std::fmod(360.0f + params.horizontal_FOV_start, 360.0f);
     const float laser_end = std::fmod(360.0f + params.horizontal_FOV_end, 360.0f);
 
+    //UAirBlueprintLib::LogMessageString("Lidar Note 6: ", "Angle Start: " + std::to_string(laser_start), LogDebugLevel::Informational);
+    //UAirBlueprintLib::LogMessageString("Lidar Note 7: ", "Angle End: " + std::to_string(laser_end), LogDebugLevel::Informational);
+
     // shoot lasers
+    current_horizontal_angle_ = params.force_full_scan ? laser_start : current_horizontal_angle_;
     for (auto laser = 0u; laser < number_of_lasers; ++laser)
     {
         const float vertical_angle = laser_angles_[laser];
@@ -84,11 +94,10 @@ void UnrealLidarSensor::getPointCloud(const msr::airlib::Pose& lidar_pose, const
         for (auto i = 0u; i < points_to_scan_with_one_laser; ++i)
         {
             const float horizontal_angle = std::fmod(current_horizontal_angle_ + angle_distance_of_laser_measure * i, 360.0f);
-
             // check if the laser is outside the requested horizontal FOV
             if (!VectorMath::isAngleBetweenAngles(horizontal_angle, laser_start, laser_end))
                 continue;
-       
+
             Vector3r point;
             int segmentationID = -1;
             // shoot laser and get the impact point, if any
@@ -102,8 +111,8 @@ void UnrealLidarSensor::getPointCloud(const msr::airlib::Pose& lidar_pose, const
         }
     }
 
-    current_horizontal_angle_ = std::fmod(current_horizontal_angle_ + angle_distance_of_tick, 360.0f);
-
+    current_horizontal_angle_ = params.force_full_scan ? laser_start : std::fmod(current_horizontal_angle_ + angle_distance_of_tick, 360.0f);
+    UAirBlueprintLib::LogMessageString("Lidar Note 10: ", "Point Cloud Size: " + std::to_string(point_cloud.size()), LogDebugLevel::Informational);
     return;
 }
 
