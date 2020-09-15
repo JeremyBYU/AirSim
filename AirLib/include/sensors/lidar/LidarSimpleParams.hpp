@@ -17,6 +17,9 @@ struct LidarSimpleParams {
     // default settings
     // TODO: enable reading of these params from AirSim settings
     bool force_full_scan = false;             // forces a full lidar scan return, disregarding update rate
+    bool force_organized = false;             // forces point cloud to always return a fixed size, and organized as an image (row = vertical beams, col = azimuth)
+    real_T range_noise = 0.0f;                // 1 sigma noise (degrees) in range portion of lidar sensor
+    real_T horizontal_noise = 0.0f;              // 1 sigma noise (meters) in horizontal portion  of lidar sensor (azimuth precision)
 
     uint number_of_channels = 16; 
     real_T range = 10000.0f / 100;            // meters
@@ -43,6 +46,10 @@ struct LidarSimpleParams {
         std::string simmode_name = AirSimSettings::singleton().simmode_name;
 
         force_full_scan = settings.force_full_scan;
+        force_organized = settings.force_organized;
+        range_noise = settings.range_noise;
+        horizontal_noise = settings.horizontal_noise;
+
         number_of_channels = settings.number_of_channels;
         range = settings.range;
         points_per_second = settings.points_per_second;

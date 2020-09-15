@@ -207,7 +207,10 @@ public: //types
     struct LidarSetting : SensorSetting {
 
         // shared defaults
-        bool force_full_scan = false;                     // forces a full lidar scan return
+        bool force_full_scan = false;                     // forces a full 360 lidar scan return
+        bool force_organized = false;                     // forces point cloud to always return a fixed size, organized as an image (row = vertical beams, col = azimuth)
+        real_T range_noise = 0.0f;                        // 1 sigma gaussian noise (degrees) in range/distance component of lidar sensor
+        real_T horizontal_noise = 0.0f;                   // 1 sigma gaussian noise (meters) in horizontal component of lidar sensor (azimuth precision)
         uint number_of_channels = 16;
         real_T range = 10000.0f / 100;                    // meters
         uint points_per_second = 100000;
@@ -1179,6 +1182,9 @@ private:
     static void initializeLidarSetting(LidarSetting& lidar_setting, const Settings& settings_json)
     {
         lidar_setting.force_full_scan = settings_json.getBool("ForceFullScan", lidar_setting.force_full_scan);
+        lidar_setting.force_organized = settings_json.getBool("ForceOrganized", lidar_setting.force_organized);
+        lidar_setting.range_noise = settings_json.getFloat("RangeNoise", lidar_setting.range_noise);
+        lidar_setting.horizontal_noise = settings_json.getFloat("HorizontalNoise", lidar_setting.horizontal_noise);
         lidar_setting.number_of_channels = settings_json.getInt("NumberOfChannels", lidar_setting.number_of_channels);
         lidar_setting.range = settings_json.getFloat("Range", lidar_setting.range);
         lidar_setting.points_per_second = settings_json.getInt("PointsPerSecond", lidar_setting.points_per_second);

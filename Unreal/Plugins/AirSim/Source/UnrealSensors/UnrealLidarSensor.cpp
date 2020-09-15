@@ -4,6 +4,7 @@
 #include "UnrealLidarSensor.h"
 #include "AirBlueprintLib.h"
 #include "common/Common.hpp"
+#include "common/common_utils/Timer.hpp"
 #include "NedTransform.h"
 #include "DrawDebugHelpers.h"
 
@@ -71,22 +72,15 @@ void UnrealLidarSensor::getPointCloud(const msr::airlib::Pose& lidar_pose, const
     // calculate needed angle/distance between each point
     const float angle_distance_of_tick = params.force_full_scan ? 360.0f : params.horizontal_rotation_frequency * 360.0f * delta_time;
     const float angle_distance_of_laser_measure = angle_distance_of_tick / points_to_scan_with_one_laser;
-    //UAirBlueprintLib::LogMessageString("Lidar Note 1: ", "Delta time: " + std::to_string(delta_time), LogDebugLevel::Informational);
-    //UAirBlueprintLib::LogMessageString("Lidar Note 2: ", "Force Full Scan: " + std::to_string(params.force_full_scan), LogDebugLevel::Informational);
-    //UAirBlueprintLib::LogMessageString("Lidar Note 3: ", "Total Points: " + std::to_string(total_points_to_scan), LogDebugLevel::Informational);
-    //UAirBlueprintLib::LogMessageString("Lidar Note 4: ", "Angle Distance of laser measure: " + std::to_string(angle_distance_of_laser_measure), LogDebugLevel::Informational);
-    //UAirBlueprintLib::LogMessageString("Lidar Note 5: ", "Points for each laser: " + std::to_string(points_to_scan_with_one_laser), LogDebugLevel::Informational);
-    
 
     // normalize FOV start/end
     const float laser_start = std::fmod(360.0f + params.horizontal_FOV_start, 360.0f);
     const float laser_end = std::fmod(360.0f + params.horizontal_FOV_end, 360.0f);
 
-    //UAirBlueprintLib::LogMessageString("Lidar Note 6: ", "Angle Start: " + std::to_string(laser_start), LogDebugLevel::Informational);
-    //UAirBlueprintLib::LogMessageString("Lidar Note 7: ", "Angle End: " + std::to_string(laser_end), LogDebugLevel::Informational);
-
     // shoot lasers
     current_horizontal_angle_ = params.force_full_scan ? laser_start : current_horizontal_angle_;
+    common_utils::Timer timer;
+    timer.start();
     for (auto laser = 0u; laser < number_of_lasers; ++laser)
     {
         const float vertical_angle = laser_angles_[laser];
@@ -108,11 +102,20 @@ void UnrealLidarSensor::getPointCloud(const msr::airlib::Pose& lidar_pose, const
                 point_cloud.emplace_back(point.z());
                 segmentation_cloud.emplace_back(segmentationID);
             }
+            else if(params.force_organized)
+            {
+                point_cloud.emplace_back(std::numeric_limits<double>::quiet_NaN());
+                point_cloud.emplace_back(std::numeric_limits<double>::quiet_NaN());
+                point_cloud.emplace_back(std::numeric_limits<double>::quiet_NaN());
+                segmentation_cloud.emplace_back(segmentationID);
+            }
         }
     }
-
+    timer.stop();
+    auto millis = timer.milliseconds();
+    UAirBlueprintLib::LogMessageString("Lidar Note 1: ", "Execution Time (ms): " + std::to_string(millis), LogDebugLevel::Informational);
     current_horizontal_angle_ = params.force_full_scan ? laser_start : std::fmod(current_horizontal_angle_ + angle_distance_of_tick, 360.0f);
-    UAirBlueprintLib::LogMessageString("Lidar Note 10: ", "Point Cloud Size: " + std::to_string(point_cloud.size()), LogDebugLevel::Informational);
+    UAirBlueprintLib::LogMessageString("Lidar Note 2: ", "Point Cloud Size: " + std::to_string(point_cloud.size()), LogDebugLevel::Informational);
     return;
 }
 
@@ -172,24 +175,34 @@ bool UnrealLidarSensor::shootLaser(const msr::airlib::Pose& lidar_pose, const ms
                 0.1                      //point leaves a trail on moving object
             );
         }
+        // Convert xyz point in Unreal Frame (Local) to range measurement in Lidar Sensor Frame
+        Vector3r point_in_lidar_frame;
+        auto distance_gt = (start - ned_transform_->toLocalNed(hit_result.ImpactPoint)).norm();
+
+        // Add noise if parameters are NOT zero
+        if (params.horizontal_noise != 0.0 || params.range_noise != 0.0)
+        {
+            auto azimuth_noise = horizontal_angle + msr::airlib::Utils::getRandomFromGaussian(params.horizontal_noise);
+            msr::airlib::Quaternionr ray_q_l_noise = msr::airlib::VectorMath::toQuaternion(
+                msr::airlib::Utils::degreesToRadians(vertical_angle),   //pitch - rotation around Y axis
+                0,                                                      //roll  - rotation around X axis
+                msr::airlib::Utils::degreesToRadians(azimuth_noise));//yaw   - rotation around Z axis
+            auto distance_noise = distance_gt + msr::airlib::Utils::getRandomFromGaussian(params.range_noise);;
+            point_in_lidar_frame = VectorMath::rotateVector(VectorMath::front(), ray_q_l_noise, true) * distance_noise;
+        }
+        else
+        {
+            point_in_lidar_frame = VectorMath::rotateVector(VectorMath::front(), ray_q_l, true) * distance_gt;
+        }
 
         // decide the frame for the point-cloud
         if (params.data_frame == AirSimSettings::kVehicleInertialFrame) {
             // current detault behavior; though it is probably not very useful.
             // not changing the default for now to maintain backwards-compat.
-            point = ned_transform_->toLocalNed(hit_result.ImpactPoint);
+            point = VectorMath::transformToWorldFrame(point_in_lidar_frame, lidar_pose + vehicle_pose, true);
         }
         else if (params.data_frame == AirSimSettings::kSensorLocalFrame) {
-            // point in vehicle intertial frame
-            Vector3r point_v_i = ned_transform_->toLocalNed(hit_result.ImpactPoint);
-
-            // tranform to lidar frame
-            point = VectorMath::transformToBodyFrame(point_v_i, lidar_pose + vehicle_pose, true);
-
-            // The above should be same as first transforming to vehicle-body frame and then to lidar frame
-            //    Vector3r point_v_b = VectorMath::transformToBodyFrame(point_v_i, vehicle_pose, true);
-            //    point = VectorMath::transformToBodyFrame(point_v_b, lidar_pose, true);
-
+            point = point_in_lidar_frame;
             // On the client side, if it is needed to transform this data back to the world frame,
             // then do the equivalent of following,
             //     Vector3r point_w = VectorMath::transformToWorldFrame(point, lidar_pose + vehicle_pose, true);
