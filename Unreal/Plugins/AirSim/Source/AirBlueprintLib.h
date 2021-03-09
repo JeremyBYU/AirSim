@@ -104,14 +104,17 @@ public:
     template<class T>
     static std::string GetMeshName(T* mesh)
     {
-        std::regex name_regex("Building.*", std::regex_constants::icase); // TODO - Make global static variable?
+        std::regex name_regex("Building.*", std::regex_constants::icase); // TODO s
+        std::regex name_regex2("BP_Custom_Rooftop_Entrance.*", std::regex_constants::icase); // TODO s
+        std::regex name_regex3("BP_Custom_Matrix.*", std::regex_constants::icase); // TODO s
+        // name_regex.assign("Building.*", std::regex_constants::icase);
         switch (mesh_naming_method_)
         {
         case msr::airlib::AirSimSettings::SegmentationSetting::MeshNamingMethodType::OwnerName:
             if (mesh->GetOwner())
             {
                 auto name = std::string(TCHAR_TO_UTF8(*(mesh->GetOwner()->GetName())));
-	 			if (std::regex_match(name, name_regex))
+	 			if (std::regex_match(name, name_regex) || std::regex_match(name, name_regex2) || std::regex_match(name, name_regex3))
 	 			{
 	 				auto specific_name = std::string(TCHAR_TO_UTF8(*(UKismetSystemLibrary::GetDisplayName(mesh))));
 	 				return specific_name;
